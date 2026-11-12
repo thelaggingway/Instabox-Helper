@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "wyrdwerk.instabox",
+  "name": "Instabox",
+  "version": "0.1.0",
+  "author": "WyrdWerk",
+  "license": "MIT",
+  "description": "Instabox cloud boxes and snapshots in the Omarchy bar: one-click SSH, start, pause, stop, snapshot, fork and delete, through the signed-in instabox CLI.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Instabox",
+    "description": "Your Instabox boxes with one-click SSH and power actions, plus snapshots you can start new boxes from.",
+    "category": "Development",
+    "aliases": [
+      "instabox",
+      "sandbox",
+      "cloud",
+      "ssh",
+      "snapshots"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 120,
+      "maxSnapshots": 8,
+      "showCount": true
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Background refresh (seconds)",
+        "description": "How often to check box states while the panel is closed. While it is open, or an action is running, it checks every 10 seconds.",
+        "min": 30,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 120
+      },
+      {
+        "key": "maxSnapshots",
+        "type": "integer",
+        "label": "Snapshots shown",
+        "description": "Newest snapshots listed before \"Show all\".",
+        "min": 3,
+        "max": 50,
+        "step": 1,
+        "defaultValue": 8
+      },
+      {
+        "key": "showCount",
+        "type": "boolean",
+        "label": "Show running count on the bar",
+        "defaultValue": true
+      }
+    ]
+  },
+  "homepage": "https://github.com/WyrdWerk/Instabox-Helper",
+  "repository": "https://github.com/WyrdWerk/Instabox-Helper"
+}

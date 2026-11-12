@@ -1,0 +1,253 @@
+#!/usr/bin/env -S python3 -I
+"""Backend for the wyrdwerk.instabox Omarchy bar panel.
+
+Everything the panel does goes through this script, which calls the
+`instabox` CLI with a fixed argv (never a shell string), so the CLI's own
+sign-in is used and no API key is stored anywhere by the plugin.
+
+  instabox-panel status              one JSON document: machines, snapshots, ports, usage
+  instabox-panel ssh <box>           (in a terminal) wake/start the box if needed, then ssh
+  instabox-panel action <verb> ...   run one action and send a desktop notification
+
+Action verbs:
+  resume|start|suspend|stop|restart <box>
+  restore <box>                      back to the snapshot it was created from
+  rm <box>
+  snapshot-save <box> <snapshot-name>
+  fork <box> <new-name>
+  create <snapshot> <new-name>
+  snapshot-rm <snapshot>
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+
+CLI = shutil.which("instabox") or os.path.expanduser("~/.local/bin/instabox")
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
+ENV = dict(os.environ, INSTABOX_NO_UPDATE_CHECK="1", INSTABOX_NO_AUTO_JSON="0")
+
+
+def cli(args, timeout=30):
+    """Run the CLI, return (exit_code, stdout, stderr)."""
+    try:
+        p = subprocess.run([CLI, *args], capture_output=True, text=True, timeout=timeout, env=ENV)
+        return p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", "timed out"
+    except FileNotFoundError:
+        return 127, "", "instabox CLI not found"
+
+
+def cli_json(args, timeout=30):
+    code, out, err = cli([*args, "--json"], timeout)
+    try:
+        data = json.loads(out) if out.strip() else None
+    except json.JSONDecodeError:
+        data = None
+    if code != 0 or data is None:
+        msg = ""
+        if isinstance(data, dict) and isinstance(data.get("error"), dict):
+            msg = data["error"].get("message", "")
+        return None, (msg or err.strip() or out.strip() or f"exit {code}")[:300], code
+    return data, "", 0
+
+
+def s(v, n=120):
+    return str(v)[:n] if v is not None else ""
+
+
+def status():
+    calls = {
+        "machines": ["ls"],
+        "snapshots": ["snapshot", "ls"],
+        "usage": ["usage"],
+        "ports": ["port", "ls"],
+    }
+    with ThreadPoolExecutor(4) as ex:
+        futures = {k: ex.submit(cli_json, v) for k, v in calls.items()}
+        res = {k: f.result() for k, f in futures.items()}
+
+    out = {"ok": True, "error": "", "authError": False, "machines": [], "snapshots": [], "ports": [], "usage": None}
+
+    data, err, code = res["machines"]
+    if data is None:
+        out["ok"] = False
+        out["error"] = err
+        out["authError"] = code == 3
+        print(json.dumps(out))
+        return
+    for m in data[:100]:
+        spec = m.get("spec") or {}
+        out["machines"].append({
+            "id": s(m.get("id"), 64),
+            "name": s(m.get("name"), 64),
+            "state": s(m.get("state"), 32),
+            "desiredState": s(m.get("desiredState"), 32),
+            "busy": m.get("operationId") is not None,
+            "vcpus": int(m.get("vcpus") or spec.get("vcpus") or 0),
+            "memMiB": int(m.get("memMiB") or spec.get("memMiB") or 0),
+            "diskGiB": int(spec.get("persistentDiskGiB") or 0),
+            "template": s((m.get("template") or {}).get("id"), 64),
+            "snapshotId": s((m.get("snapshot") or {}).get("id"), 64),
+            "autoSuspendSec": int(m.get("autoSuspendAfterSeconds") or 0),
+            "createdAt": s(m.get("createdAt"), 40),
+            "updatedAt": s(m.get("updatedAt"), 40),
+            "cooldownUntil": s(m.get("cooldownUntil"), 40),
+        })
+
+    data, err, _ = res["snapshots"]
+    if data is not None:
+        for sn in data[:200]:
+            out["snapshots"].append({
+                "id": s(sn.get("id"), 64),
+                "name": s(sn.get("name"), 64),
+                "description": s(sn.get("description"), 200),
+                "status": s(sn.get("status"), 32),
+                "sourceMachineId": s(sn.get("sourceMachineId"), 64),
+                "sizeBytes": int(sn.get("rootSizeBytes") or 0) + int(sn.get("dataSizeBytes") or 0),
+                "createdAt": s(sn.get("createdAt"), 40),
+            })
+        out["snapshots"].sort(key=lambda x: x["createdAt"], reverse=True)
+    else:
+        out["snapshotsError"] = err
+
+    data, _, _ = res["ports"]
+    if isinstance(data, dict):
+        for p in (data.get("ports") or [])[:100]:
+            url = s(p.get("url"), 300)
+            if not url.startswith("https://"):
+                continue
+            out["ports"].append({
+                "machineId": s(p.get("machineId"), 64),
+                "port": int(p.get("port") or 0),
+                "url": url,
+                "access": s(p.get("access"), 16),
+            })
+
+    data, _, _ = res["usage"]
+    if isinstance(data, dict):
+        limits = data.get("limits") or {}
+        out["usage"] = {
+            "machines": int(data.get("machines") or 0),
+            "snapshots": int(data.get("snapshots") or 0),
+            "storedBytes": int(data.get("storedBytes") or 0),
+            "maxMachines": int(limits.get("maxMachines") or 0),
+            "maxSnapshots": int(limits.get("maxSnapshots") or limits.get("maxImages") or 0),
+        }
+
+    print(json.dumps(out))
+
+
+def notify(title, body, urgent=False):
+    cmd = shutil.which("omarchy-notification-send")
+    if cmd:
+        args = [cmd, "--app-name", "Instabox", "-g", "\U000F048B", "-u", "critical" if urgent else "normal", title, body]
+    else:
+        args = ["notify-send", "-a", "Instabox", title, body]
+    try:
+        subprocess.run(args, timeout=10)
+    except Exception:
+        pass
+
+
+def check_name(v):
+    if not NAME_RE.match(v or ""):
+        raise SystemExit(f"invalid name: {v!r}")
+    return v
+
+
+ACTIONS = {
+    # verb: (argv builder, timeout seconds, success text)
+    "resume": (lambda b: ["resume", b], 180, "{b} resumed"),
+    "start": (lambda b: ["start", b], 300, "{b} started"),
+    "suspend": (lambda b: ["suspend", b], 180, "{b} paused"),
+    "stop": (lambda b: ["stop", b], 300, "{b} stopped"),
+    "restart": (lambda b: ["restart", b], 300, "{b} restarted"),
+    "restore": (lambda b: ["restore", b, "--yes"], 900, "{b} restored to its snapshot"),
+    "rm": (lambda b: ["rm", b, "--yes"], 300, "{b} deleted"),
+    "snapshot-rm": (lambda b: ["snapshot", "rm", b, "--yes"], 300, "Snapshot {b} deleted"),
+}
+
+TWO_ARG = {
+    "snapshot-save": (lambda b, n: ["snapshot", "save", b, "--name", n], 3600, "Snapshot {n} saved from {b}"),
+    "fork": (lambda b, n: ["fork", b, "--name", n], 900, "{n} forked from {b}"),
+    "create": (lambda b, n: ["create", "--name", n, "--snapshot", b], 900, "{n} created from {b}"),
+}
+
+
+def action(argv):
+    if not argv:
+        raise SystemExit("action needs a verb")
+    verb, rest = argv[0], argv[1:]
+    if verb in ACTIONS and len(rest) == 1:
+        build, timeout, ok = ACTIONS[verb]
+        b = check_name(rest[0])
+        args, text = build(b), ok.format(b=b)
+    elif verb in TWO_ARG and len(rest) == 2:
+        build, timeout, ok = TWO_ARG[verb]
+        b, n = check_name(rest[0]), check_name(rest[1])
+        args, text = build(b, n), ok.format(b=b, n=n)
+    else:
+        raise SystemExit(f"unknown action: {verb} {rest}")
+
+    code, out, err = cli(args, timeout)
+    if code == 0:
+        notify("Instabox", text)
+    else:
+        detail = (err.strip() or out.strip() or f"exit {code}").splitlines()
+        notify(f"Instabox: {verb} failed", " ".join(detail[-3:])[:300], urgent=True)
+    sys.exit(code)
+
+
+def ssh(argv):
+    if len(argv) != 1:
+        raise SystemExit("ssh needs a box name")
+    box = check_name(argv[0])
+    print(f"\033[1mInstabox\033[0m · {box}")
+
+    info, err, _ = cli_json(["get", box])
+    state = (info or {}).get("state", "") if isinstance(info, dict) else ""
+    if info is None:
+        print(f"Could not read {box}: {err}")
+    elif state != "running":
+        verb = "start" if state == "stopped" else "resume"
+        print(f"{box} is {state or 'not running'}; running instabox {verb}…", flush=True)
+        code, _, e = cli([verb, box], 300)
+        if code != 0 and verb == "resume":
+            code, _, e = cli(["wake", box], 120)
+        if code != 0:
+            print(f"Could not wake {box}: {e.strip()}")
+
+    code = subprocess.call([CLI, "ssh", box], env=ENV)
+    if code != 0:
+        print(f"\nssh exited with {code}. Press Enter to close.")
+        try:
+            input()
+        except EOFError:
+            pass
+    sys.exit(code)
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(2)
+    cmd, rest = sys.argv[1], sys.argv[2:]
+    if cmd == "status":
+        status()
+    elif cmd == "action":
+        action(rest)
+    elif cmd == "ssh":
+        ssh(rest)
+    else:
+        print(__doc__)
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()
