@@ -14,7 +14,8 @@ An Omarchy shell **bar-widget plugin** (id `wyrdwerk.instabox`) that puts Instab
 | `Panel.qml` | Bar icon + `KeyboardPanel`. State, polling (`status`, `catalog`, `disk`), action dispatch, confirm dialog, inline name prompts, restore picker, New box form. Inline components at the bottom: `PlainText`, `StateDot`, `ActionButton`, `Chips` (ButtonGroup), `Picker` (Dropdown), `FieldLabel`, `RowCard`, `NamePrompt`, `BillingCard`, `NewBoxForm`, `MachineRow`, `SnapshotRow`, `TemplateRow`. |
 | `Model.js` | `.pragma library` with pure helpers: parsing, labels, formatting, billing text, size/idle/delete options, template sorting, form → argv (`newBoxArgs`), default names, confirm texts, icon glyphs. No QML types, so it runs under Node for tests. |
 | `bin/instabox-panel` | Python 3 (stdlib only, run with `python3 -I`). Subcommands: `status` (boxes, snapshots, ports, usage, `billing`, `specs`), `catalog` (templates), `disk <box>`, `action <verb> …`, `ssh <box>`. The only code that runs `instabox`. |
-| `tests/` | `run.sh` runs all of them: `source-test.sh` (static safety checks), `helper-test.sh` (helper against a fake CLI), `model-test.mjs` (Model.js under Node). |
+| `tests/` | `marketplace-scan.mjs` runs the marketplace's own security baseline over the repo (needs a clone of `omacom/omarchy-plugin-marketplace`; CI does this). `run.sh` runs the rest: `source-test.sh` (static safety checks), `helper-test.sh` (helper against a fake CLI), `model-test.mjs` (Model.js under Node). |
+| `preview.png` | Marketplace and README image, taken with Demo data on (never real account data). |
 | `.github/workflows/ci.yml` | Runs `tests/run.sh` on push and PR. |
 
 ## Run, reload, test
@@ -68,6 +69,19 @@ Checked against `instabox` 0.8.260; confirm with `instabox <cmd> --help` before 
 - `rm`, `snapshot rm` and `restore` need `--yes` off a terminal. `ssh` needs a running box; the helper resumes, starts or wakes it first.
 - `INSTABOX_API_KEY` replaces the stored sign-in when set. The helper sets `INSTABOX_NO_UPDATE_CHECK=1` for its own calls.
 
+## The preview image
+
+`preview.png` must never show a real account. Retake it like this:
+
+1. `omarchy bar set wyrdwerk.instabox demoMode true --json` (back up `~/.config/omarchy/shell.json` first).
+2. Optionally set the `expandedBox` default to `"web-app"` in `Panel.qml`, then `omarchy restart shell`.
+3. Open the panel (`omarchy-shell wyrdwerk.instabox open`), screenshot the monitor with `grim -o <output>`, and crop exactly to the panel border (no bar, tray or desktop) with `magick … -crop … -bordercolor "#16161a" -border 40 -strip preview.png`.
+4. Restore `Panel.qml` and `shell.json`, and `omarchy restart shell`.
+
+Demo data lives in `demo_status`, `demo_catalog` and `demo_disk` in the helper; keep it plausible and obviously made up.
+
 ## Releasing
 
 Bump `version` in `manifest.json`, run `tests/run.sh`, commit and push to `main`. Users update with `omarchy plugin update wyrdwerk.instabox`, then `omarchy restart shell`.
+
+Once listed on the Omarchy marketplace, each release also needs a **Plugin verification** issue in `omacom/omarchy-plugin-marketplace` ("Verify and publish a newer upstream commit", with the plugin id, repo URL and full commit SHA); until a maintainer approves it the listing shows *Update unverified*. Keep the repo free of privilege escalation, service-manager calls, package-manager installs, download-and-run commands and files named `install*`/`setup*` (even in docs; see the marketplace's `SECURITY.md`), so its security baseline stays `passed`.

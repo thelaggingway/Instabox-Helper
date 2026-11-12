@@ -39,6 +39,10 @@ for v in rm snapshot-rm restore restore-to stop restart resize-size resize-disk 
   [[ $line == *"\"$v\""* ]] || fail "confirmVerbs lacks $v"
 done
 
+# Demo mode never acts on the account.
+grep -q 'if (root.demo) { demoNotice(); return }' "$ROOT/Panel.qml" || fail "demo guard missing"
+[[ $(grep -c 'if (root.demo) { demoNotice(); return }' "$ROOT/Panel.qml") -ge 2 ]] || fail "demo guard must cover runAction and ssh"
+
 [[ -x $ROOT/bin/instabox-panel ]] || fail "bin/instabox-panel is not executable"
 python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$ROOT/bin/instabox-panel" || fail "helper syntax"
 

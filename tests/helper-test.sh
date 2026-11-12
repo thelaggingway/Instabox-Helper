@@ -189,6 +189,15 @@ refuse new -box --template agent-browser
 [[ ! -s $LOG ]] || fail "CLI ran for refused input: $(cat "$LOG")"
 ok
 
+# --- demo data: valid shapes, and the CLI is never called ---
+: > "$LOG"
+out=$("$HELPER" status --demo)
+python3 -I -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["ok"] and d["demo"] and len(d["machines"])==3 and d["billing"]["costUSD"]>0 and d["specs"]' "$out" || fail "demo status"
+"$HELPER" catalog --demo | python3 -I -c 'import json,sys; d=json.load(sys.stdin); assert any(t["blocked"] for t in d["templates"]) and any(t["gpuTypes"] for t in d["templates"])' || fail "demo catalog"
+"$HELPER" disk web-app --demo | python3 -I -c 'import json,sys; assert json.load(sys.stdin)["filesystems"]' || fail "demo disk"
+[[ ! -s $LOG ]] || fail "demo mode called the CLI: $(cat "$LOG")"
+ok
+
 # --- ssh wakes a paused box, then connects ---
 : > "$LOG"
 "$HELPER" ssh dev < /dev/null > /dev/null

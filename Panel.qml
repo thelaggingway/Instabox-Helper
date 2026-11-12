@@ -23,8 +23,16 @@ Panel {
 
   readonly property int refreshIntervalSec: Math.max(30, setting("refreshIntervalSec", 120))
   readonly property int maxSnapshots: Math.max(3, setting("maxSnapshots", 8))
-  readonly property bool showCount: setting("showCount", true) !== false
-  readonly property bool showBilling: setting("showBilling", true) !== false
+  // On/off settings may arrive as booleans or as "true"/"false" strings (omarchy bar set without --json).
+  function flag(name, fallback) {
+    var v = setting(name, fallback)
+    return v === true || v === "true" ? true : (v === false || v === "false" ? false : fallback)
+  }
+  readonly property bool showCount: flag("showCount", true)
+  readonly property bool showBilling: flag("showBilling", true)
+  // Made-up data for screenshots: the helper never calls the CLI, and actions do nothing.
+  readonly property bool demo: flag("demoMode", false)
+  readonly property var demoArg: demo ? ["--demo"] : []
 
   property var status: null
   property bool loading: false
@@ -119,7 +127,7 @@ Panel {
   }
 
   function fetchDisk(name) {
-    var proc = diskComponent.createObject(root, { box: name, command: [root.helper, "disk", name] })
+    var proc = diskComponent.createObject(root, { box: name, command: [root.helper, "disk", name].concat(root.demoArg) })
     if (proc) proc.running = true
   }
 
@@ -141,7 +149,12 @@ Panel {
     root.pending = next
   }
 
+  function demoNotice() {
+    Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Instabox", "-u", "low", "Demo data is on", "Nothing was changed. Turn off Demo data in the plugin settings."])
+  }
+
   function runAction(verb, args) {
+    if (root.demo) { demoNotice(); return }
     var target = args[0]
     if (root.pending[target]) return
     var proc = opComponent.createObject(root, { target: target, command: [root.helper, "action", verb].concat(args) })
@@ -291,6 +304,7 @@ Panel {
   // ----- misc -----
 
   function ssh(name) {
+    if (root.demo) { demoNotice(); return }
     Quickshell.execDetached(["omarchy-launch-tui", "--app-id=org.omarchy.instabox-ssh", root.helper, "ssh", name])
     root.close()
     wakeRefresh.restart()
@@ -323,6 +337,8 @@ Panel {
     root.expandedSnapshot = root.expandedSnapshot === id ? "" : id
   }
 
+  onDemoChanged: { root.status = null; root.catalog = null; root.diskInfo = ({}); refresh(); refreshCatalog() }
+
   onOpenedChanged: {
     if (!opened) {
       root.prompt = null
@@ -349,14 +365,14 @@ Panel {
 
   Process {
     id: statusProc
-    command: [root.helper, "status"]
+    command: [root.helper, "status"].concat(root.demoArg)
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.applyStatus(text) }
     onExited: function(exitCode) { if (exitCode !== 0) root.loading = false }
   }
 
   Process {
     id: catalogProc
-    command: [root.helper, "catalog"]
+    command: [root.helper, "catalog"].concat(root.demoArg)
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.applyCatalog(text) }
   }
 
@@ -670,6 +686,7 @@ Panel {
               text: {
                 var parts = []
                 if (root.healthy && root.status.usage) parts.push(Model.usageLine(root.status.usage))
+                if (root.demo) { parts.push("demo data"); return parts.join(" · ") }
                 parts.push(root.loading ? "refreshing…" : (root.lastRefreshAt ? "updated " + Model.ago(root.now, new Date(root.lastRefreshAt * 1000).toISOString()) : "loading…"))
                 return parts.join(" · ")
               }

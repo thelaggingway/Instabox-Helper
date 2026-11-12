@@ -10,6 +10,7 @@ sign-in is used and no API key is stored anywhere by the plugin.
   instabox-panel disk <box>          how full a running box's disks are (one JSON)
   instabox-panel ssh <box>           (in a terminal) wake/start the box if needed, then ssh
   instabox-panel action <verb> ...   run one action and send a desktop notification
+  status|catalog|disk ... --demo     made-up data for screenshots; never calls the CLI
 
 Action verbs:
   resume|start|suspend|stop|restart|restore|rm <box>
@@ -403,11 +404,87 @@ def ssh(argv):
     sys.exit(code)
 
 
+# ---------- demo data (the panel's "Demo data" setting; for screenshots) ----------
+
+def _iso(hours_ago):
+    import datetime
+    t = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours_ago)
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def demo_status():
+    def box(i, name, state, vcpus, mem, tmpl, snap, idle, hours):
+        return {"id": f"m_demo{i}", "name": name, "state": state, "desiredState": state, "busy": False,
+                "vcpus": vcpus, "memMiB": mem, "diskGiB": 20, "template": tmpl, "snapshotId": snap,
+                "gpu": False, "autoSuspendSec": idle, "createdAt": _iso(hours), "updatedAt": _iso(1), "cooldownUntil": ""}
+
+    def snap(i, name, desc, gb, hours, tmpl="agent-browser"):
+        return {"id": f"sn_demo{i}", "name": name, "description": desc, "status": "ready", "sourceMachineId": "",
+                "template": tmpl, "sizeBytes": gb * 1000 ** 3, "createdAt": _iso(hours)}
+
+    print(json.dumps({
+        "ok": True, "error": "", "authError": False, "demo": True,
+        "machines": [
+            box(1, "web-app", "running", 4, 8192, "agent-browser", "sn_demo1", 1800, 50),
+            box(2, "api-tests", "running", 2, 4096, "universal", "", 600, 6),
+            box(3, "android-lab", "suspended", 4, 8192, "android", "", 1800, 120),
+        ],
+        "snapshots": [
+            snap(1, "node22-base", "Node 22, pnpm, Playwright browsers and the team's dotfiles", 36, 30),
+            snap(2, "web-app-20261110-1830", "Before the auth refactor", 41, 70),
+            snap(3, "python-ml", "uv, PyTorch CPU wheels and a warm pip cache", 52, 200, "universal"),
+            snap(4, "android-ready", "Android 14 image with the test APKs installed", 48, 400, "android"),
+        ],
+        "ports": [{"machineId": "m_demo1", "port": 3000, "url": "https://3000-demo.instabox.tech", "access": "private"}],
+        "usage": {"machines": 3, "snapshots": 4, "storedBytes": 61 * 1000 ** 3, "maxMachines": 500, "maxSnapshots": 0},
+        "specs": [{"vcpus": 4, "memMiB": 8192, "diskGiB": 20}, {"vcpus": 2, "memMiB": 4096, "diskGiB": 20},
+                  {"vcpus": 8, "memMiB": 16384, "diskGiB": 20}],
+        "billing": {
+            "tier": "pro", "periodStart": "", "periodEnd": _iso(-24 * 18), "ratedUntil": _iso(1),
+            "costUSD": 6.42, "allowanceUSD": 20.0, "creditRemainingUSD": 13.58, "overageUSD": 0.0, "creditsUSD": 0.0,
+            "parts": [
+                {"label": "vCPU", "usd": 2.61, "detail": "652.5 vCPU-h"},
+                {"label": "Memory", "usd": 3.02, "detail": "1342 GiB-h"},
+                {"label": "Storage", "usd": 0.79, "detail": "5266 GiB-h"},
+                {"label": "GPU", "usd": 0.0, "detail": ""},
+                {"label": "Egress", "usd": 0.0, "detail": "0.4 GiB"},
+            ],
+            "gpuPrices": {"l4": 0.8},
+        },
+    }))
+
+
+def demo_catalog():
+    t = lambda i, d, **k: {"id": i, "description": d, "spec": {"vcpus": 4, "memMiB": 8192, "diskGiB": 20},
+                           "gpuTypes": k.get("gpus", []), "blocked": k.get("blocked", False)}
+    print(json.dumps({"ok": True, "error": "", "templates": [
+        t("agent-browser", "The default: universal plus a desktop (Chromium, VNC, Xfce) for agents that browse or drive a GUI"),
+        t("universal", "gh, Node.js, Bun, pnpm, Claude Code, Codex, Docker, Python (uv), Go, Rust, a JDK and a C toolchain"),
+        t("android", "The default plus Android 14 with adb, the phone on the desktop"),
+        t("omarchy", "Arch Linux with Omarchy: its Hyprland desktop, themes and tools"),
+        t("ci", "Ubuntu 24.04 with GitHub's Actions runner: a fresh box per job"),
+        t("gpu", "A box with an NVIDIA L4 GPU, billed per GPU-hour while it runs",
+          gpus=[{"type": "l4", "model": "NVIDIA L4", "memGiB": 24, "spec": {"vcpus": 11, "memMiB": 36864, "diskGiB": 100}}]),
+        t("macos", "", blocked=True),
+    ]}))
+
+
+def demo_disk():
+    print(json.dumps({"ok": True, "error": "", "filesystems": [
+        {"mount": "/data", "sizeBytes": 20 * 1000 ** 3, "usedBytes": int(7.4 * 1000 ** 3), "usedPct": 37, "level": "ok"},
+        {"mount": "/", "sizeBytes": 16 * 1000 ** 3, "usedBytes": int(10.9 * 1000 ** 3), "usedPct": 68, "level": "ok"},
+    ]}))
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(2)
     cmd, rest = sys.argv[1], sys.argv[2:]
+    demo = rest[-1:] == ["--demo"]
+    if demo and cmd in ("status", "catalog", "disk"):
+        {"status": demo_status, "catalog": demo_catalog, "disk": demo_disk}[cmd]()
+        return
     if cmd == "status":
         status()
     elif cmd == "catalog":

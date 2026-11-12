@@ -16,3 +16,7 @@ jobs:
         with:
           node-version: 22
       - run: tests/run.sh
+      - name: Marketplace security baseline
+        run: |
+          git clone --depth 1 https://github.com/omacom/omarchy-plugin-marketplace.git "$RUNNER_TEMP/marketplace"
+          node tests/marketplace-scan.mjs "$RUNNER_TEMP/marketplace"

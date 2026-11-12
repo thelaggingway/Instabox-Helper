@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "wyrdwerk.instabox",
-  "name": "Instabox",
-  "version": "0.2.0",
+  "name": "Instabox Helper",
+  "version": "0.3.0",
   "author": "WyrdWerk",
   "license": "MIT",
   "description": "Instabox cloud boxes, snapshots, templates and this month's billing in the Omarchy bar: one-click SSH, new boxes from templates or snapshots, power, resize, snapshot, fork and delete, through the signed-in instabox CLI.",
@@ -13,7 +13,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Instabox",
+    "displayName": "Instabox Helper",
     "description": "Your Instabox boxes with one-click SSH, power and settings; new boxes from templates or snapshots; this month's spend.",
     "category": "Development",
     "aliases": [
@@ -29,7 +29,8 @@
       "refreshIntervalSec": 120,
       "maxSnapshots": 8,
       "showCount": true,
-      "showBilling": true
+      "showBilling": true,
+      "demoMode": false
     },
     "schema": [
       {
@@ -64,6 +65,13 @@
         "label": "Show this month's billing",
         "description": "A card with this period's cost, allowance and credit left, from instabox usage. Adds no extra request.",
         "defaultValue": true
+      },
+      {
+        "key": "demoMode",
+        "type": "boolean",
+        "label": "Demo data",
+        "description": "Show made-up boxes, snapshots and billing instead of your account, for screenshots. Actions do nothing while it is on.",
+        "defaultValue": false
       }
     ]
   },

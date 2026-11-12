@@ -4,6 +4,10 @@ An [Omarchy](https://omarchy.org/) bar plugin for [Instabox](https://instabox.sh
 
 It is a front end to the official `instabox` CLI and uses the CLI's own sign-in. The plugin stores no API key, token or password.
 
+![The Instabox Helper panel, showing made-up demo data](preview.png)
+
+*The panel with **Demo data** on (made-up boxes and spend), one box expanded.*
+
 ## What it does
 
 **Bar icon.** A server icon that lights up while any box is running, with the count beside it. Left-click opens the panel and right-click refreshes. The tooltip shows how many boxes are running and what you've spent this month.
@@ -57,7 +61,9 @@ Every action sends a desktop notification when it finishes, saying whether it wo
 
 - Omarchy with the Quickshell-based shell (the one with `omarchy plugin` and `~/.config/omarchy/shell.json`).
 - The [`instabox` CLI](https://instabox.sh/docs), signed in. Check with `instabox whoami`.
-- `python3`, which Omarchy ships.
+- `python3`, `wl-copy` (for Copy SSH) and `xdg-open` (for links), which Omarchy ships.
+
+Nothing else is installed, and no sudo is needed.
 
 ## Install
 
@@ -100,9 +106,11 @@ Open the plugin's settings from the Omarchy settings panel, or set them in `~/.c
 | `maxSnapshots` | `8` | Snapshots listed before "Show all". |
 | `showCount` | `true` | Show the number of running boxes next to the icon. |
 | `showBilling` | `true` | Show the *This month* card. It costs no extra request. |
+| `demoMode` | `false` | Show made-up boxes, snapshots and billing instead of your account, for screenshots and demos. The helper doesn't call the CLI and every action does nothing. |
 
 ```bash
 omarchy bar set wyrdwerk.instabox refreshIntervalSec 300
+omarchy bar set wyrdwerk.instabox demoMode true --json    # booleans need --json
 ```
 
 ## Keyboard and scripting
@@ -192,6 +200,8 @@ These remain on the [dashboard](https://dashboard.instabox.sh/dashboard/machines
 
 ```bash
 tests/run.sh        # static checks, the helper against a fake CLI, and Model.js under Node
+git clone --depth 1 https://github.com/omacom/omarchy-plugin-marketplace.git /tmp/marketplace
+node tests/marketplace-scan.mjs /tmp/marketplace    # the marketplace's security baseline; must say passed
 ```
 
 The tests never touch a real account: `helper-test.sh` puts a fake `instabox` and a fake notifier on `PATH`. See [AGENTS.md](AGENTS.md) for the layout, conventions and how to add an action.
