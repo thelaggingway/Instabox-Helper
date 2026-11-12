@@ -1,5 +1,5 @@
 #!/usr/bin/env -S python3 -I
-"""Backend for the wyrdwerk.instabox Omarchy bar panel.
+"""Backend for the thelaggingway.instabox-helper Omarchy bar panel.
 
 Everything the panel does goes through this script, which calls the
 `instabox` CLI with a fixed argv (never a shell string), so the CLI's own

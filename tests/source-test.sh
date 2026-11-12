@@ -23,7 +23,7 @@ grep -q 'if (/\^https:' "$ROOT/Panel.qml" || fail "openUrl https guard missing"
 python3 -I -c '
 import json, sys
 m = json.load(open(sys.argv[1]))
-assert m["id"] == "wyrdwerk.instabox"
+assert m["id"] == "thelaggingway.instabox-helper"
 assert m["kinds"] == ["bar-widget"] and m["entryPoints"]["barWidget"] == "Panel.qml"
 for f in m["barWidget"]["schema"]:
     assert f["key"] in m["barWidget"]["defaults"], f["key"]

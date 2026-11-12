@@ -71,7 +71,7 @@ Nothing else is installed, and no sudo is needed.
 omarchy plugin add https://github.com/thelaggingway/Instabox-Helper.git --enable
 ```
 
-`omarchy plugin add` shows the code warning, clones the repo into `~/.config/omarchy/plugins/wyrdwerk.instabox`, validates it and asks which bar section to use (the default is `right`). Then restart the shell once so the bar loads the new widget:
+`omarchy plugin add` shows the code warning, clones the repo into `~/.config/omarchy/plugins/thelaggingway.instabox-helper`, validates it and asks which bar section to use (the default is `right`). Then restart the shell once so the bar loads the new widget:
 
 ```bash
 omarchy restart shell
@@ -80,7 +80,7 @@ omarchy restart shell
 To place it next to a particular widget:
 
 ```bash
-omarchy bar put wyrdwerk.instabox --after robzolkos.github
+omarchy bar put thelaggingway.instabox-helper --after robzolkos.github
 ```
 
 ### Sign in to Instabox
@@ -109,24 +109,24 @@ Open the plugin's settings from the Omarchy settings panel, or set them in `~/.c
 | `demoMode` | `false` | Show made-up boxes, snapshots and billing instead of your account, for screenshots and demos. The helper doesn't call the CLI and every action does nothing. |
 
 ```bash
-omarchy bar set wyrdwerk.instabox refreshIntervalSec 300
-omarchy bar set wyrdwerk.instabox demoMode true --json    # booleans need --json
+omarchy bar set thelaggingway.instabox-helper refreshIntervalSec 300
+omarchy bar set thelaggingway.instabox-helper demoMode true --json    # booleans need --json
 ```
 
 ## Keyboard and scripting
 
-The panel listens on the IPC target `wyrdwerk.instabox`:
+The panel listens on the IPC target `thelaggingway.instabox-helper`:
 
 ```bash
-omarchy-shell wyrdwerk.instabox toggle     # also open, close
-omarchy-shell wyrdwerk.instabox newBox     # open the panel with the New box form
-omarchy-shell wyrdwerk.instabox refresh
+omarchy-shell thelaggingway.instabox-helper toggle     # also open, close
+omarchy-shell thelaggingway.instabox-helper newBox     # open the panel with the New box form
+omarchy-shell thelaggingway.instabox-helper refresh
 ```
 
 To open it with a key, add a line to `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("SUPER + ALT + I", "Instabox", "omarchy-shell wyrdwerk.instabox toggle")
+o.bind("SUPER + ALT + I", "Instabox", "omarchy-shell thelaggingway.instabox-helper toggle")
 ```
 
 Inside the panel, Esc closes it, Esc cancels a name prompt or the New box form, Enter accepts them, and the arrow keys and Enter drive the confirm dialog.
@@ -134,7 +134,7 @@ Inside the panel, Esc closes it, Esc cancels a name prompt or the New box form, 
 The helper also works on its own:
 
 ```bash
-H=~/.config/omarchy/plugins/wyrdwerk.instabox/bin/instabox-panel
+H=~/.config/omarchy/plugins/thelaggingway.instabox-helper/bin/instabox-panel
 $H status | jq .billing
 $H catalog | jq '.templates[].id'
 $H ssh <box>
@@ -174,7 +174,7 @@ Panel.qml ──argv──▶ bin/instabox-panel ──argv──▶ instabox CL
 
 | Symptom | Fix |
 |---|---|
-| No icon on the bar after installing | `omarchy restart shell`. Check that it is in the layout with `grep wyrdwerk.instabox ~/.config/omarchy/shell.json`, or add it with `omarchy bar put wyrdwerk.instabox`. |
+| No icon on the bar after installing | `omarchy restart shell`. Check that it is in the layout with `grep thelaggingway.instabox-helper ~/.config/omarchy/shell.json`, or add it with `omarchy bar put thelaggingway.instabox-helper`. |
 | Edits or an update don't show | Hot reload doesn't always pick up changes to this plugin; run `omarchy restart shell`. |
 | "Not signed in" | Click **Sign in to Instabox**, or run `instabox login` (or `npx -y instabox@latest`). |
 | "Can't reach Instabox" | The error text comes from the CLI. Try `instabox ls` in a terminal. |
@@ -188,8 +188,8 @@ Panel.qml ──argv──▶ bin/instabox-panel ──argv──▶ instabox CL
 ## Update and uninstall
 
 ```bash
-omarchy plugin update wyrdwerk.instabox && omarchy restart shell
-omarchy plugin remove wyrdwerk.instabox
+omarchy plugin update thelaggingway.instabox-helper && omarchy restart shell
+omarchy plugin remove thelaggingway.instabox-helper
 ```
 
 ## Not included (yet)

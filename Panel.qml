@@ -14,8 +14,8 @@ import "Model.js" as Model
 // as child processes (the helper sends the success/failure notification).
 Panel {
   id: root
-  moduleName: "wyrdwerk.instabox"
-  ipcTarget: "wyrdwerk.instabox"
+  moduleName: "thelaggingway.instabox-helper"
+  ipcTarget: "thelaggingway.instabox-helper"
   manageIpc: false
 
   readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, ""))
@@ -353,7 +353,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "wyrdwerk.instabox"
+    target: "thelaggingway.instabox-helper"
     function open(): void { root.open() }
     function close(): void { root.close() }
     function show(): void { root.open() }
