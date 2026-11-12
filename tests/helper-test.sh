@@ -33,7 +33,24 @@ J
  {"id":"sn_2","name":"new","status":"pending","rootSizeBytes":0,"dataSizeBytes":0,"createdAt":"2026-11-01T00:00:00Z"}]
 J
   ;;
-  "usage --json") echo '{"machines":2,"snapshots":2,"storedBytes":1000,"limits":{"maxMachines":500,"maxSnapshots":0}}' ;;
+  "usage --json") cat <<'J'
+{"machines":2,"snapshots":2,"storedBytes":1000,
+ "limits":{"maxMachines":500,"maxSnapshots":0,"machineSpecs":[{"vcpus":4,"memMiB":8192,"persistentDiskGiB":20},{"vcpus":2,"memMiB":4096}]},
+ "org":{"tier":"pro"},
+ "cost":{"periodEnd":"2026-12-01T00:00:00Z","costUSD":1.775,"allowanceUSD":20,"creditRemainingUSD":18.225,"overageUSD":0,
+         "vcpuUSD":0.5,"vcpuHours":141.5,"memUSD":0.6,"storageUSD":0.1,"gpuUSD":0.4,
+         "gpu":[{"type":"l4","model":"NVIDIA L4","gpuHours":0.5,"hourUSD":0.8}]}}
+J
+  ;;
+  "templates --json") cat <<'J'
+{"templates":[{"id":"agent-browser","description":"default","defaultSpec":{"vcpus":4,"memMiB":8192},"creatable":true},
+ {"id":"gpu","defaultSpec":{"vcpus":4},"gpuTypes":[{"type":"l4","model":"NVIDIA L4","memGiB":24,"sizes":[{"vcpus":11,"memMiB":36864}]},{"type":"$(id)"}],"creatable":true},
+ {"id":"macos","defaultSpec":{"vcpus":12},"minimumLease":{"hours":24},"creatable":true},
+ {"id":"old","creatable":false},
+ {"id":"-x","creatable":true}]}
+J
+  ;;
+  "disk dev --json") echo '{"filesystems":[{"mount":"/data","sizeBytes":100,"usedBytes":85,"usedPct":85,"level":"high"}]}' ;;
   "port ls --json") echo '{"ports":[{"machineId":"m_1","port":3000,"url":"https://3000-x.instabox.tech","access":"public"},{"machineId":"m_1","port":1,"url":"javascript:alert(1)"}]}' ;;
   "get dev --json") echo '{"name":"dev","state":"suspended"}' ;;
   rm\ broken*) echo "boom: no such box" >&2; exit 4 ;;
@@ -65,6 +82,11 @@ assert [s["name"] for s in d["snapshots"]] == ["new", "old"], "snapshots newest 
 assert d["snapshots"][1]["sizeBytes"] == 3
 assert [p["port"] for p in d["ports"]] == [3000], "non-https port URLs are dropped"
 assert d["usage"]["maxMachines"] == 500
+b = d["billing"]
+assert b["tier"] == "pro" and b["costUSD"] == 1.775 and b["allowanceUSD"] == 20 and b["creditRemainingUSD"] == 18.225
+assert b["gpuPrices"] == {"l4": 0.8}
+assert [p["label"] for p in b["parts"]] == ["vCPU", "Memory", "Storage", "GPU", "Egress"]
+assert d["specs"] == [{"vcpus": 4, "memMiB": 8192, "diskGiB": 20}, {"vcpus": 2, "memMiB": 4096, "diskGiB": 0}]
 EOF
 ok
 
@@ -104,6 +126,66 @@ done
 if "$HELPER" action snapshot-save dev 'bad name' >/dev/null 2>&1; then fail "accepted bad new name"; fi
 if "$HELPER" action ssh-everything dev >/dev/null 2>&1; then fail "accepted unknown verb"; fi
 if "$HELPER" action rm >/dev/null 2>&1; then fail "accepted missing target"; fi
+[[ ! -s $LOG ]] || fail "CLI ran for refused input: $(cat "$LOG")"
+ok
+
+# --- catalog: creatable, safe ids only; macOS marked blocked; bad GPU types dropped ---
+out=$("$HELPER" catalog)
+python3 -I - "$out" <<'EOF' || fail "catalog"
+import json, sys
+d = json.loads(sys.argv[1])
+t = {x["id"]: x for x in d["templates"]}
+assert sorted(t) == ["agent-browser", "gpu", "macos"], sorted(t)
+assert t["macos"]["blocked"] is True and t["agent-browser"]["blocked"] is False
+assert [g["type"] for g in t["gpu"]["gpuTypes"]] == ["l4"]
+assert t["gpu"]["gpuTypes"][0]["spec"] == {"vcpus": 11, "memMiB": 36864, "diskGiB": 0}
+EOF
+ok
+
+# --- disk ---
+out=$("$HELPER" disk dev)
+python3 -I -c 'import json,sys; d=json.loads(sys.argv[1]); f=d["filesystems"][0]; assert d["ok"] and f["mount"]=="/data" and f["usedPct"]==85' "$out" || fail "disk"
+if "$HELPER" disk '-x' >/dev/null 2>&1; then fail "disk accepted bad name"; fi
+ok
+
+# --- v0.2 actions ---
+: > "$LOG"
+"$HELPER" action rename dev dev2
+"$HELPER" action restore-to dev old
+"$HELPER" action idle dev 10
+"$HELPER" action idle dev 0
+"$HELPER" action resize-size dev 8 16384
+"$HELPER" action resize-disk dev 40
+"$HELPER" action new fresh --template agent-browser --size 2/4096 --idle 15 --delete-after 4
+"$HELPER" action new fromsnap --snapshot old
+"$HELPER" action new gbox --template gpu --gpu l4 --idle 0
+expected=$'rename dev dev2\nrestore dev --snapshot old --yes\nauto-suspend dev 10m\nauto-suspend dev 0\nresize dev --vcpus 8 --mem-mib 16384 --restart\nresize dev --disk 40 --restart\ncreate --name fresh --template agent-browser --vcpus 2 --mem-mib 4096 --auto-suspend 15m --delete-after 4h\ncreate --name fromsnap --snapshot old\ncreate --name gbox --template gpu --gpu l4 --auto-suspend 0'
+[[ $(cat "$LOG") == "$expected" ]] || { diff <(echo "$expected") "$LOG"; fail "v0.2 action argv"; }
+ok
+
+# --- v0.2 refusals: nothing reaches the CLI ---
+: > "$LOG"
+refuse() { if "$HELPER" action "$@" >/dev/null 2>&1; then fail "accepted: $*"; fi; }
+refuse idle dev 3
+refuse idle dev 31
+refuse idle dev 10m
+refuse resize-size dev 8
+refuse resize-size dev x 16384
+refuse resize-disk dev 0
+refuse resize-disk dev 2000
+refuse rename dev 'bad name'
+refuse new
+refuse new box
+refuse new box --template agent-browser --snapshot old
+refuse new box --template macos
+refuse new box --template agent-browser --size 4x8192
+refuse new box --template agent-browser --idle 2
+refuse new box --template agent-browser --delete-after 48
+refuse new box --template agent-browser --gpu 'l4;id'
+refuse new box --template agent-browser --idle
+refuse new box --template agent-browser --idle 5 --idle 10
+refuse new box --template agent-browser --setup-file /etc/passwd
+refuse new -box --template agent-browser
 [[ ! -s $LOG ]] || fail "CLI ran for refused input: $(cat "$LOG")"
 ok
 

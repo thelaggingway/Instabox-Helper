@@ -29,6 +29,16 @@ for f in m["barWidget"]["schema"]:
     assert f["key"] in m["barWidget"]["defaults"], f["key"]
 ' "$ROOT/manifest.json" || fail "manifest"
 
+# macOS boxes (24 h minimum lease) are never created from the panel.
+grep -q 'BLOCKED_TEMPLATES = {"macos"}' "$ROOT/bin/instabox-panel" || fail "macOS guard missing in helper"
+grep -q 'minimumLease' "$ROOT/bin/instabox-panel" || fail "minimumLease guard missing in catalog"
+
+# Destructive, disruptive and billable verbs stay behind the confirm dialog.
+line=$(grep 'readonly property var confirmVerbs' "$ROOT/Panel.qml") || fail "confirmVerbs missing"
+for v in rm snapshot-rm restore restore-to stop restart resize-size resize-disk new-gpu; do
+  [[ $line == *"\"$v\""* ]] || fail "confirmVerbs lacks $v"
+done
+
 [[ -x $ROOT/bin/instabox-panel ]] || fail "bin/instabox-panel is not executable"
 python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$ROOT/bin/instabox-panel" || fail "helper syntax"
 

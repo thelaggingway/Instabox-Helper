@@ -5,18 +5,23 @@ Everything the panel does goes through this script, which calls the
 `instabox` CLI with a fixed argv (never a shell string), so the CLI's own
 sign-in is used and no API key is stored anywhere by the plugin.
 
-  instabox-panel status              one JSON document: machines, snapshots, ports, usage
+  instabox-panel status              boxes, snapshots, ports, usage and this period's billing (one JSON)
+  instabox-panel catalog             base templates and the plan's sizes (one JSON)
+  instabox-panel disk <box>          how full a running box's disks are (one JSON)
   instabox-panel ssh <box>           (in a terminal) wake/start the box if needed, then ssh
   instabox-panel action <verb> ...   run one action and send a desktop notification
 
 Action verbs:
-  resume|start|suspend|stop|restart <box>
-  restore <box>                      back to the snapshot it was created from
-  rm <box>
+  resume|start|suspend|stop|restart|restore|rm <box>
+  snapshot-rm <snapshot>
   snapshot-save <box> <snapshot-name>
   fork <box> <new-name>
-  create <snapshot> <new-name>
-  snapshot-rm <snapshot>
+  rename <box> <new-name>
+  restore-to <box> <snapshot>
+  idle <box> <minutes 5-30 | 0>
+  resize-size <box> <vcpus> <mem-mib>
+  resize-disk <box> <gb>
+  new <name> (--template T | --snapshot S) [--size VCPUS/MEMMIB] [--idle MIN] [--delete-after HOURS] [--gpu TYPE]
 """
 
 import json
@@ -29,7 +34,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 CLI = shutil.which("instabox") or os.path.expanduser("~/.local/bin/instabox")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
+GPU_RE = re.compile(r"^[a-z0-9]{1,16}$")
 ENV = dict(os.environ, INSTABOX_NO_UPDATE_CHECK="1", INSTABOX_NO_AUTO_JSON="0")
+# A macOS box leases a whole Mac for at least 24 hours; the panel never creates one.
+BLOCKED_TEMPLATES = {"macos"}
 
 
 def cli(args, timeout=30):
@@ -61,6 +69,18 @@ def s(v, n=120):
     return str(v)[:n] if v is not None else ""
 
 
+def num(v):
+    try:
+        return round(float(v), 4)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def spec_of(x):
+    x = x or {}
+    return {"vcpus": int(x.get("vcpus") or 0), "memMiB": int(x.get("memMiB") or 0), "diskGiB": int(x.get("persistentDiskGiB") or 0)}
+
+
 def status():
     calls = {
         "machines": ["ls"],
@@ -72,7 +92,8 @@ def status():
         futures = {k: ex.submit(cli_json, v) for k, v in calls.items()}
         res = {k: f.result() for k, f in futures.items()}
 
-    out = {"ok": True, "error": "", "authError": False, "machines": [], "snapshots": [], "ports": [], "usage": None}
+    out = {"ok": True, "error": "", "authError": False, "machines": [], "snapshots": [], "ports": [],
+           "usage": None, "billing": None, "specs": []}
 
     data, err, code = res["machines"]
     if data is None:
@@ -82,18 +103,19 @@ def status():
         print(json.dumps(out))
         return
     for m in data[:100]:
-        spec = m.get("spec") or {}
+        spec = spec_of(m.get("spec"))
         out["machines"].append({
             "id": s(m.get("id"), 64),
             "name": s(m.get("name"), 64),
             "state": s(m.get("state"), 32),
             "desiredState": s(m.get("desiredState"), 32),
             "busy": m.get("operationId") is not None,
-            "vcpus": int(m.get("vcpus") or spec.get("vcpus") or 0),
-            "memMiB": int(m.get("memMiB") or spec.get("memMiB") or 0),
-            "diskGiB": int(spec.get("persistentDiskGiB") or 0),
+            "vcpus": int(m.get("vcpus") or spec["vcpus"]),
+            "memMiB": int(m.get("memMiB") or spec["memMiB"]),
+            "diskGiB": spec["diskGiB"],
             "template": s((m.get("template") or {}).get("id"), 64),
             "snapshotId": s((m.get("snapshot") or {}).get("id"), 64),
+            "gpu": bool(m.get("gpus") or m.get("gpu")),
             "autoSuspendSec": int(m.get("autoSuspendAfterSeconds") or 0),
             "createdAt": s(m.get("createdAt"), 40),
             "updatedAt": s(m.get("updatedAt"), 40),
@@ -109,6 +131,7 @@ def status():
                 "description": s(sn.get("description"), 200),
                 "status": s(sn.get("status"), 32),
                 "sourceMachineId": s(sn.get("sourceMachineId"), 64),
+                "template": s((sn.get("template") or {}).get("id"), 64),
                 "sizeBytes": int(sn.get("rootSizeBytes") or 0) + int(sn.get("dataSizeBytes") or 0),
                 "createdAt": s(sn.get("createdAt"), 40),
             })
@@ -139,7 +162,76 @@ def status():
             "maxMachines": int(limits.get("maxMachines") or 0),
             "maxSnapshots": int(limits.get("maxSnapshots") or limits.get("maxImages") or 0),
         }
+        out["specs"] = [spec_of(x) for x in (limits.get("machineSpecs") or [])[:12]]
+        c = data.get("cost")
+        if isinstance(c, dict):
+            org = data.get("org") or {}
+            out["billing"] = {
+                "tier": s(org.get("tier"), 32),
+                "periodStart": s(c.get("periodStart"), 40),
+                "periodEnd": s(c.get("periodEnd"), 40),
+                "ratedUntil": s(c.get("ratedUntil"), 40),
+                "costUSD": num(c.get("costUSD")),
+                "allowanceUSD": num(c.get("allowanceUSD")),
+                "creditRemainingUSD": num(c.get("creditRemainingUSD")),
+                "overageUSD": num(c.get("overageUSD")),
+                "creditsUSD": num(c.get("creditsUSD")),
+                "parts": [
+                    {"label": "vCPU", "usd": num(c.get("vcpuUSD")), "detail": "%.1f vCPU-h" % num(c.get("vcpuHours"))},
+                    {"label": "Memory", "usd": num(c.get("memUSD")), "detail": "%.0f GiB-h" % num(c.get("memGiBHours"))},
+                    {"label": "Storage", "usd": num(c.get("storageUSD")), "detail": "%.0f GiB-h" % num(c.get("storageGiBHours"))},
+                    {"label": "GPU", "usd": num(c.get("gpuUSD")), "detail": ", ".join(
+                        "%.1f h %s" % (num(g.get("gpuHours")), s(g.get("model") or g.get("type"), 40))
+                        for g in (c.get("gpu") or [])[:4] if isinstance(g, dict))},
+                    {"label": "Egress", "usd": num(c.get("egressUSD")), "detail": "%.1f GiB" % num(c.get("egressGiB"))},
+                ],
+                "gpuPrices": {s(g.get("type"), 16): num(g.get("hourUSD")) for g in (c.get("gpu") or [])[:8] if isinstance(g, dict)},
+            }
 
+    print(json.dumps(out))
+
+
+def catalog():
+    data, err, code = cli_json(["templates"])
+    out = {"ok": data is not None, "error": err, "templates": []}
+    if isinstance(data, dict):
+        for t in (data.get("templates") or [])[:40]:
+            tid = s(t.get("id"), 32)
+            if not t.get("creatable", True) or not NAME_RE.match(tid):
+                continue
+            gpus = [{
+                "type": s(g.get("type"), 16),
+                "model": s(g.get("model"), 40),
+                "memGiB": int(g.get("memGiB") or 0),
+                "spec": spec_of((g.get("sizes") or [{}])[0]),
+            } for g in (t.get("gpuTypes") or [])[:8] if isinstance(g, dict) and GPU_RE.match(str(g.get("type") or ""))]
+            desc = s(t.get("description"), 240)
+            if not desc and gpus:
+                desc = "A box with an " + " or ".join(g["model"] or g["type"] for g in gpus) + " GPU, billed per GPU-hour while it runs"
+            out["templates"].append({
+                "id": tid,
+                "description": desc,
+                "spec": spec_of(t.get("defaultSpec")),
+                "gpuTypes": gpus,
+                "blocked": tid in BLOCKED_TEMPLATES or bool(t.get("minimumLease")),
+            })
+    print(json.dumps(out))
+
+
+def disk(argv):
+    if len(argv) != 1:
+        raise SystemExit("disk needs a box name")
+    data, err, _ = cli_json(["disk", check_name(argv[0])], 30)
+    out = {"ok": data is not None, "error": err, "filesystems": []}
+    if isinstance(data, dict):
+        for f in (data.get("filesystems") or [])[:4]:
+            out["filesystems"].append({
+                "mount": s(f.get("mount"), 32),
+                "sizeBytes": int(f.get("sizeBytes") or 0),
+                "usedBytes": int(f.get("usedBytes") or 0),
+                "usedPct": num(f.get("usedPct")),
+                "level": s(f.get("level"), 16),
+            })
     print(json.dumps(out))
 
 
@@ -161,7 +253,20 @@ def check_name(v):
     return v
 
 
-ACTIONS = {
+def check_int(v, lo, hi, what):
+    if not re.fullmatch(r"\d{1,6}", v or "") or not lo <= int(v) <= hi:
+        raise SystemExit(f"invalid {what}: {v!r}")
+    return str(int(v))
+
+
+def check_idle(v):
+    v = check_int(v, 0, 30, "idle minutes")
+    if v != "0" and int(v) < 5:
+        raise SystemExit("idle pause must be 0 or 5-30 minutes")
+    return v
+
+
+ONE_ARG = {
     # verb: (argv builder, timeout seconds, success text)
     "resume": (lambda b: ["resume", b], 180, "{b} resumed"),
     "start": (lambda b: ["start", b], 300, "{b} started"),
@@ -173,25 +278,90 @@ ACTIONS = {
     "snapshot-rm": (lambda b: ["snapshot", "rm", b, "--yes"], 300, "Snapshot {b} deleted"),
 }
 
-TWO_ARG = {
+TWO_NAMES = {
     "snapshot-save": (lambda b, n: ["snapshot", "save", b, "--name", n], 3600, "Snapshot {n} saved from {b}"),
     "fork": (lambda b, n: ["fork", b, "--name", n], 900, "{n} forked from {b}"),
+    "rename": (lambda b, n: ["rename", b, n], 60, "{b} renamed to {n}"),
+    "restore-to": (lambda b, n: ["restore", b, "--snapshot", n, "--yes"], 900, "{b} restored to snapshot {n}"),
+    # v0.1 form, kept for scripts: create <snapshot> <new-name>
     "create": (lambda b, n: ["create", "--name", n, "--snapshot", b], 900, "{n} created from {b}"),
 }
+
+
+def build_new(rest):
+    """new <name> (--template T | --snapshot S) [--size V/M] [--idle MIN] [--delete-after H] [--gpu TYPE]"""
+    if not rest:
+        raise SystemExit("new needs a name")
+    name, opts = check_name(rest[0]), rest[1:]
+    if len(opts) % 2:
+        raise SystemExit("new: every option needs a value")
+    seen = {}
+    for k, v in zip(opts[::2], opts[1::2]):
+        if k in seen:
+            raise SystemExit(f"new: {k} given twice")
+        seen[k] = v
+    args = ["create", "--name", name]
+    if ("--template" in seen) == ("--snapshot" in seen):
+        raise SystemExit("new needs exactly one of --template or --snapshot")
+    source = ""
+    if "--template" in seen:
+        t = check_name(seen.pop("--template"))
+        if t in BLOCKED_TEMPLATES:
+            raise SystemExit(f"the panel does not create {t} boxes; use the CLI")
+        args += ["--template", t]
+        source = f"template {t}"
+    else:
+        sn = check_name(seen.pop("--snapshot"))
+        args += ["--snapshot", sn]
+        source = f"snapshot {sn}"
+    if "--gpu" in seen:
+        g = seen.pop("--gpu")
+        if not GPU_RE.match(g):
+            raise SystemExit(f"invalid GPU type: {g!r}")
+        args += ["--gpu", g]
+    if "--size" in seen:
+        m = re.fullmatch(r"(\d{1,3})/(\d{3,6})", seen.pop("--size"))
+        if not m or not (1 <= int(m[1]) <= 256 and 512 <= int(m[2]) <= 1048576):
+            raise SystemExit("invalid --size, want VCPUS/MEMMIB")
+        args += ["--vcpus", m[1], "--mem-mib", m[2]]
+    if "--idle" in seen:
+        v = check_idle(seen.pop("--idle"))
+        args += ["--auto-suspend", "0" if v == "0" else f"{v}m"]
+    if "--delete-after" in seen:
+        h = check_int(seen.pop("--delete-after"), 1, 24, "delete-after hours")
+        args += ["--delete-after", f"{h}h"]
+    if seen:
+        raise SystemExit(f"new: unknown option {next(iter(seen))}")
+    return args, 1200, f"{name} created from {source}"
 
 
 def action(argv):
     if not argv:
         raise SystemExit("action needs a verb")
     verb, rest = argv[0], argv[1:]
-    if verb in ACTIONS and len(rest) == 1:
-        build, timeout, ok = ACTIONS[verb]
+    if verb in ONE_ARG and len(rest) == 1:
+        build, timeout, ok = ONE_ARG[verb]
         b = check_name(rest[0])
         args, text = build(b), ok.format(b=b)
-    elif verb in TWO_ARG and len(rest) == 2:
-        build, timeout, ok = TWO_ARG[verb]
+    elif verb in TWO_NAMES and len(rest) == 2:
+        build, timeout, ok = TWO_NAMES[verb]
         b, n = check_name(rest[0]), check_name(rest[1])
         args, text = build(b, n), ok.format(b=b, n=n)
+    elif verb == "idle" and len(rest) == 2:
+        b, v = check_name(rest[0]), check_idle(rest[1])
+        args, timeout = ["auto-suspend", b, "0" if v == "0" else f"{v}m"], 60
+        text = f"{b}: idle pause off" if v == "0" else f"{b}: pauses after {v} min idle"
+    elif verb == "resize-size" and len(rest) == 3:
+        b = check_name(rest[0])
+        v, m = check_int(rest[1], 1, 256, "vCPUs"), check_int(rest[2], 512, 1048576, "memory MiB")
+        args, timeout = ["resize", b, "--vcpus", v, "--mem-mib", m, "--restart"], 900
+        text = f"{b} resized to {v} vCPU / {int(m) // 1024} GB"
+    elif verb == "resize-disk" and len(rest) == 2:
+        b, g = check_name(rest[0]), check_int(rest[1], 1, 1024, "disk GB")
+        args, timeout = ["resize", b, "--disk", g, "--restart"], 900
+        text = f"{b} disk is now {g} GB"
+    elif verb == "new":
+        args, timeout, text = build_new(rest)
     else:
         raise SystemExit(f"unknown action: {verb} {rest}")
 
@@ -240,6 +410,10 @@ def main():
     cmd, rest = sys.argv[1], sys.argv[2:]
     if cmd == "status":
         status()
+    elif cmd == "catalog":
+        catalog()
+    elif cmd == "disk":
+        disk(rest)
     elif cmd == "action":
         action(rest)
     elif cmd == "ssh":

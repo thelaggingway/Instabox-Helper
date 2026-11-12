@@ -6,7 +6,7 @@ import vm from "node:vm"
 
 const src = readFileSync(fileURLToPath(new URL("../Model.js", import.meta.url)), "utf8").replace(/^\.pragma library\s*$/m, "")
 const M = {}
-vm.runInNewContext(src + "\n;Object.assign(M, { glyph, icons, validName, parseStatus, runningCount, stateLabel, stateTone, spec, bytes, ago, snapshotName, portsFor, defaultName, headline, tooltip, usageLine, confirmText, progressText })", { M, Date, JSON, Math, String, Number, Object, Array, isNaN })
+vm.runInNewContext(src + "\n;Object.assign(M, { glyph, icons, validName, parseStatus, runningCount, stateLabel, stateTone, spec, bytes, ago, snapshotName, portsFor, defaultName, headline, tooltip, usageLine, confirmText, progressText, money, billingPct, shortDate, billingHeadline, billingDetail, billingParts, ratedLine, specKey, specLabel, sizeOptions, idleOptions, deleteOptions, idleValue, sortedTemplates, findTemplate, sourceOptions, gpuOptions, newBoxArgs, diskLine, diskWarn })", { M, Date, JSON, Math, String, Number, Object, Array, isNaN })
 
 let n = 0
 const t = (name, fn) => { fn(); n++ }
@@ -81,6 +81,71 @@ t("headline, tooltip, usage, confirm", () => {
 
 t("icons are single code points", () => {
   for (const [k, v] of Object.entries(M.icons)) assert.equal([...v].length, 1, k)
+})
+
+t("billing", () => {
+  const b = { costUSD: 1.5, allowanceUSD: 20, creditRemainingUSD: 18.5, overageUSD: 0, periodEnd: "2026-12-01T00:00:00Z",
+    parts: [{ label: "vCPU", usd: 0.5 }, { label: "GPU", usd: 0 }, { label: "Egress", usd: 0.01 }] }
+  assert.equal(M.money(1.5), "$1.50")
+  assert.equal(M.money(150.4), "$150")
+  assert.equal(M.billingHeadline(b), "$1.50 of $20.00")
+  assert.equal(M.billingDetail(b), "$18.50 left · resets 1 Dec")
+  assert.equal(M.billingDetail({ ...b, overageUSD: 3 }), "$3.00 over allowance · resets 1 Dec")
+  assert.equal(M.billingPct(b), 0.075)
+  assert.equal(M.billingPct({ costUSD: 50, allowanceUSD: 20 }), 1)
+  assert.equal(M.billingPct({ costUSD: 5, allowanceUSD: 0 }), 0)
+  assert.deepEqual([...M.billingParts(b).map(p => p.label)], ["vCPU", "Egress"])
+  assert.equal(M.shortDate("bad"), "")
+  assert.match(M.ratedLine("2026-11-12T18:00:00Z"), /^Usage counted up to \d\d:\d\d$/)
+  assert.equal(M.ratedLine(""), "Usage is counted hourly")
+})
+
+t("sizes and idle", () => {
+  const specs = [{ vcpus: 4, memMiB: 8192 }, { vcpus: 2, memMiB: 4096 }, { vcpus: 8, memMiB: 16384 }]
+  assert.deepEqual([...M.sizeOptions(specs).map(o => o.value)], ["2/4096", "4/8192", "8/16384"])
+  assert.equal(M.specLabel(specs[0]), "4 vCPU · 8 GB")
+  assert.equal(M.idleValue({ autoSuspendSec: 1800 }), "30")
+  assert.equal(M.idleValue({ autoSuspendSec: 0 }), "0")
+  assert.equal(M.idleValue({ autoSuspendSec: 420 }), "")
+  for (const o of M.idleOptions) assert.ok(o.value === "0" || (+o.value >= 5 && +o.value <= 30))
+  for (const o of M.deleteOptions) assert.ok(+o.value >= 0 && +o.value <= 24)
+})
+
+t("templates and sources", () => {
+  const cat = { templates: [{ id: "zeta" }, { id: "macos", blocked: true }, { id: "agent-browser" }, { id: "alpha", gpuTypes: [{ type: "l4", model: "NVIDIA L4", spec: { vcpus: 11, memMiB: 36864 } }] }] }
+  assert.deepEqual([...M.sortedTemplates(cat).map(t => t.id)], ["agent-browser", "alpha", "zeta", "macos"])
+  assert.equal(M.findTemplate(cat, "zeta").id, "zeta")
+  assert.equal(M.findTemplate(cat, "nope"), null)
+  const status = { snapshots: [{ name: "s1", status: "ready" }, { name: "s2", status: "pending" }] }
+  const src = M.sourceOptions(cat, status).map(o => o.value)
+  assert.deepEqual([...src], ["template:agent-browser", "template:alpha", "template:zeta", "snapshot:s1"])
+  assert.equal(M.gpuOptions(M.findTemplate(cat, "alpha"), { gpuPrices: { l4: 0.8 } })[0].label, "NVIDIA L4 · 11 vCPU · 36 GB · $0.80/h")
+  assert.equal(M.gpuOptions(M.findTemplate(cat, "alpha"), null)[0].label, "NVIDIA L4 · 11 vCPU · 36 GB")
+})
+
+t("newBoxArgs", () => {
+  assert.deepEqual([...M.newBoxArgs({ name: "b", sourceKind: "template", sourceRef: "agent-browser", size: "2/4096", idle: "15", deleteAfter: "4" })],
+    ["b", "--template", "agent-browser", "--size", "2/4096", "--idle", "15", "--delete-after", "4"])
+  assert.deepEqual([...M.newBoxArgs({ name: "b", sourceKind: "snapshot", sourceRef: "s1", size: "", idle: "30", deleteAfter: "0" })],
+    ["b", "--snapshot", "s1", "--idle", "30"])
+  assert.deepEqual([...M.newBoxArgs({ name: "g", sourceKind: "template", sourceRef: "gpu", gpu: "l4", size: "4/8192", idle: "0" })],
+    ["g", "--template", "gpu", "--gpu", "l4", "--idle", "0"])
+})
+
+t("disk", () => {
+  const d = { filesystems: [{ mount: "/data", usedBytes: 4e9, sizeBytes: 20e9, usedPct: 20 }, { mount: "/", usedBytes: 9e9, sizeBytes: 10e9, usedPct: 90 }] }
+  assert.equal(M.diskLine(d), "home 4.0 GB of 20.0 GB (20%) · / 9.0 GB of 10.0 GB (90%)")
+  assert.ok(M.diskWarn(d))
+  assert.ok(!M.diskWarn({ filesystems: [d.filesystems[0]] }))
+  assert.equal(M.diskLine(null), "")
+})
+
+t("v0.2 confirm texts", () => {
+  assert.match(M.confirmText("restore-to", "dev", "base"), /dev.*base/)
+  assert.match(M.confirmText("resize-size", "dev", "8 vCPU / 16 GB"), /restarts/)
+  assert.match(M.confirmText("resize-disk", "dev", "40"), /40 GB/)
+  assert.match(M.confirmText("new-gpu", "g", "NVIDIA L4."), /billed/)
+  for (const v of ["new", "rename", "restore-to", "idle", "resize-size", "resize-disk"]) assert.ok(M.progressText[v], v)
 })
 
 console.log(`model-test: ${n} groups passed`)

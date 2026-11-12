@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "wyrdwerk.instabox",
   "name": "Instabox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "WyrdWerk",
   "license": "MIT",
-  "description": "Instabox cloud boxes and snapshots in the Omarchy bar: one-click SSH, start, pause, stop, snapshot, fork and delete, through the signed-in instabox CLI.",
+  "description": "Instabox cloud boxes, snapshots, templates and this month's billing in the Omarchy bar: one-click SSH, new boxes from templates or snapshots, power, resize, snapshot, fork and delete, through the signed-in instabox CLI.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Instabox",
-    "description": "Your Instabox boxes with one-click SSH and power actions, plus snapshots you can start new boxes from.",
+    "description": "Your Instabox boxes with one-click SSH, power and settings; new boxes from templates or snapshots; this month's spend.",
     "category": "Development",
     "aliases": [
       "instabox",
@@ -28,7 +28,8 @@
     "defaults": {
       "refreshIntervalSec": 120,
       "maxSnapshots": 8,
-      "showCount": true
+      "showCount": true,
+      "showBilling": true
     },
     "schema": [
       {
@@ -55,6 +56,13 @@
         "key": "showCount",
         "type": "boolean",
         "label": "Show running count on the bar",
+        "defaultValue": true
+      },
+      {
+        "key": "showBilling",
+        "type": "boolean",
+        "label": "Show this month's billing",
+        "description": "A card with this period's cost, allowance and credit left, from instabox usage. Adds no extra request.",
         "defaultValue": true
       }
     ]
