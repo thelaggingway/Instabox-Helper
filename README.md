@@ -68,7 +68,7 @@ Nothing else is installed, and no sudo is needed.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/WyrdWerk/Instabox-Helper.git --enable
+omarchy plugin add https://github.com/thelaggingway/Instabox-Helper.git --enable
 ```
 
 `omarchy plugin add` shows the code warning, clones the repo into `~/.config/omarchy/plugins/wyrdwerk.instabox`, validates it and asks which bar section to use (the default is `right`). Then restart the shell once so the bar loads the new widget:

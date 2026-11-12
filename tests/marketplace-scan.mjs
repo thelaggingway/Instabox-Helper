@@ -19,8 +19,8 @@ const files = listing.map((line) => {
 })
 
 const result = buildSecurityBaseline({
-  repository: "WyrdWerk/Instabox-Helper",
-  repoUrl: "https://github.com/WyrdWerk/Instabox-Helper",
+  repository: "thelaggingway/Instabox-Helper",
+  repoUrl: "https://github.com/thelaggingway/Instabox-Helper",
   commitSha: "0".repeat(40),
   files,
 })
