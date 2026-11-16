@@ -39,7 +39,7 @@ To see the panel without clicking, open it over IPC and screenshot right away (`
 2. **Argv only, never a shell.** QML starts processes with arrays (`Quickshell.execDetached([...])`, `Process { command: [...] }`); the helper uses `subprocess.run([...])` without `shell=True`. Never build a `sh -c` string that contains data.
 3. **Validate names before the CLI runs.** The helper's `NAME_RE` (`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`) and `Model.validName` must stay identical. A name starting with `-` would become a CLI flag.
 4. **Whitelist verbs and options.** New actions go into `ONE_ARG` (one target) or `TWO_NAMES` (target + name) in the helper, or get their own branch in `action()` with strict checks (`check_int`, `check_idle`, `GPU_RE`). `new` parses only its known options (`build_new`); unknown or repeated options are refused. Unknown verbs exit without calling the CLI.
-5. **Confirm destructive, disruptive or billable actions.** `root.request()` opens the `ConfirmDialog` for every verb in `root.confirmVerbs` (`rm`, `snapshot-rm`, `restore`, `restore-to`, `stop`, `restart`, `resize-size`, `resize-disk`, and `new-gpu` for GPU creates). Add new ones to that list and to `Model.confirmText`.
+5. **Confirm destructive, disruptive or billable actions.** `root.request()` opens the `ConfirmDialog` for every verb in `root.confirmVerbs` (`rm`, `snapshot-rm`, `restore`, `restore-to`, `stop`, `restart`, `resize-size`, `resize-disk`, `snapshot-save-restart`, and `new-gpu` for GPU creates). Add new ones to that list and to `Model.confirmText`.
 6. **Never create macOS boxes.** A macOS box leases a Mac for 24 hours minimum. The helper refuses `--template macos` (`BLOCKED_TEMPLATES`) and `catalog` marks any template with a `minimumLease` as `blocked`; the panel shows it without a create button. Keep both guards.
 7. **Bound what comes back.** The helper caps list lengths and string lengths, and passes on only the fields the panel uses (never `metadata`). Port URLs must be `https://`.
 8. **Icons go in the button text.** `BarIconButton` draws `text`, so the glyph has to be in it (`Model.icons.server + count`). Glyphs are Nerd Font code points built with `String.fromCodePoint` in `Model.icons`; keep literal private-use characters out of the source.
@@ -57,7 +57,7 @@ To see the panel without clicking, open it over IPC and screenshot right away (`
 
 ## CLI facts this depends on
 
-Checked against `instabox` 0.8.260; confirm with `instabox <cmd> --help` before relying on new flags.
+Checked against `instabox` 0.8.277; confirm with `instabox <cmd> --help` before relying on new flags.
 
 - `ls`, `snapshot ls`, `usage`, `port ls` accept `--json`; errors with `--json` print `{"error":{"code","message"}}` on stdout. Exit codes: 0 ok, 3 auth, 4 not found, 5 quota, 75 retryable.
 - `ls` items: `id`, `name`, `state` (`running|suspended|stopped|…`), `desiredState`, `operationId` (non-null while busy), `vcpus`, `memMiB`, `spec.persistentDiskGiB`, `template.id`, `snapshot.id`, `autoSuspendAfterSeconds`, `createdAt`.
@@ -65,7 +65,10 @@ Checked against `instabox` 0.8.260; confirm with `instabox <cmd> --help` before 
 - `usage.limits`: a limit of `0` means unlimited.
 - `usage --json` also returns `cost` (this period: `costUSD`, `allowanceUSD`, `creditRemainingUSD`, `overageUSD`, `vcpuUSD`, `memUSD`, `storageUSD`, `gpuUSD`, `egressUSD`, `gpu[]` with `hourUSD`, `periodEnd`, `ratedUntil`), `org.tier`, and `limits.machineSpecs` (the plan's sizes). `workspace get <org>` has the same numbers plus spend cap; the panel doesn't need it.
 - `templates --json` → `{templates: [{id, description, defaultSpec, creatable, gpuTypes?[{type, model, sizes[]}], minimumLease?}]}`. `gpu` has no description; the helper writes one.
-- `create` flags used: `--template|--snapshot`, `--vcpus --mem-mib`, `--gpu TYPE`, `--auto-suspend 5m-30m|0`, `--delete-after 1h-24h`. `auto-suspend <box> <dur>|0`, `rename <box> <new>`, `resize <box> --vcpus N --mem-mib M | --disk N [--restart]`, `restore <box> --snapshot S --yes`, `disk <box> --json` (running boxes only).
+- `create` flags used: `--template|--snapshot`, `--vcpus --mem-mib`, `--gpu TYPE`, `--auto-suspend 5m-30m|0`, `--delete-after 1h-24h`. `auto-suspend <box> <dur>|0`, `rename <box> <new>`, `snapshot save <box> --name N [--restart]` (a running GPU box is refused without `--restart`, which stops, saves and starts it again; the panel uses it only for running GPU boxes, after a confirm), `resize <box> --vcpus N --mem-mib M | --disk N [--restart]`, `restore <box> --snapshot S --yes`, `disk <box> --json` (running boxes only).
+- `templates --json` also has `gpuMode` (`null` or `"metal"`, as on `gpu-metal`) and `gpuTypes[].default`/`maxPerMachine`; the panel doesn't use them yet. `create --snapshot S --gpu TYPE:COUNT` re-sizes a GPU snapshot's count; the form doesn't offer counts.
+- `ls --json` doesn't document where a box's GPUs appear; `is_gpu()` checks `gpus`/`gpu` at the top level and in `spec`, then a `gpu*` template id.
+- With `--json`, failures now also print one `instabox: error CODE: MESSAGE` line on stderr; `cli_json` reads the JSON error first, so this changes nothing.
 - `rm`, `snapshot rm` and `restore` need `--yes` off a terminal. `ssh` needs a running box; the helper resumes, starts or wakes it first.
 - `INSTABOX_API_KEY` replaces the stored sign-in when set. The helper sets `INSTABOX_NO_UPDATE_CHECK=1` for its own calls.
 

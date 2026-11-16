@@ -18,7 +18,7 @@ It is a front end to the official `instabox` CLI and uses the CLI's own sign-in.
 
 | Field | Options |
 |---|---|
-| Start from | The base templates (agent-browser, universal, herdr, orca, t3, omarchy, ci, android, gpu) and your ready snapshots |
+| Start from | The base templates (agent-browser, universal, herdr, orca, t3, omarchy, ci, android, gpu, gpu-metal) and your ready snapshots |
 | Name | Suggested from the source; must be new |
 | Size | The sizes your plan allows (for example 2 vCPU · 4 GB, 4 · 8, 8 · 16) |
 | GPU | For the `gpu` template, the GPU type with its size and hourly price. A GPU box asks you to confirm first |
@@ -38,6 +38,7 @@ Click a box to see more: the snapshot or template it came from, when it was made
 |---|---|---|
 | Copy SSH | copies `instabox ssh <box>` to the clipboard | No |
 | Snapshot | `snapshot save <box> --name <name>` | Asks for a name (suggests `<box>-YYYYMMDD-HHMM`) |
+| Snapshot (running GPU box) | `snapshot save <box> --name <name> --restart` (GPU boxes can't be saved live: stops, saves, starts again) | Name, then yes |
 | Fork | `fork <box> --name <name>` | Asks for a name (suggests `<box>-fork`) |
 | Rename | `rename <box> <new-name>` | Asks for the name |
 | Stop | `stop <box>` | Yes |

@@ -159,6 +159,7 @@ function confirmText(verb, target, extra) {
   case "rm": return "Delete box " + target + "? Its disks are gone for good."
   case "snapshot-rm": return "Delete snapshot " + target + "? Boxes made from it keep running."
   case "restore": return "Restore " + target + " to the snapshot it was made from? Everything since is lost."
+  case "snapshot-save-restart": return "Save snapshot " + extra + " of GPU box " + target + "? A running GPU box can't be saved live, so it stops, saves and starts again: files stay, running processes end."
   case "stop": return "Stop " + target + "? Running processes end; disks stay."
   case "restart": return "Restart " + target + "? Running processes end; disks stay."
   default: return verb + " " + target + "?"
@@ -310,7 +311,7 @@ function diskWarn(info) {
 var progressText = {
   "resume": "Resuming", "start": "Starting", "suspend": "Pausing", "stop": "Stopping",
   "restart": "Restarting", "restore": "Restoring", "rm": "Deleting",
-  "snapshot-save": "Saving snapshot", "fork": "Forking", "create": "Creating", "snapshot-rm": "Deleting",
+  "snapshot-save": "Saving snapshot", "snapshot-save-restart": "Saving snapshot", "fork": "Forking", "create": "Creating", "snapshot-rm": "Deleting",
   "new": "Creating", "rename": "Renaming", "restore-to": "Restoring", "idle": "Updating",
   "resize-size": "Resizing", "resize-disk": "Resizing disk"
 }

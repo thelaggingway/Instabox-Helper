@@ -16,6 +16,7 @@ Action verbs:
   resume|start|suspend|stop|restart|restore|rm <box>
   snapshot-rm <snapshot>
   snapshot-save <box> <snapshot-name>
+  snapshot-save-restart <box> <snapshot-name>   (GPU box: stop, save, start again)
   fork <box> <new-name>
   rename <box> <new-name>
   restore-to <box> <snapshot>
@@ -77,6 +78,14 @@ def num(v):
         return 0.0
 
 
+def is_gpu(m):
+    """Whether a box has GPUs. `ls --json` doesn't document the field, so look in the
+    likely places, then fall back to the template (gpu, gpu-metal)."""
+    raw = m.get("spec") if isinstance(m.get("spec"), dict) else {}
+    tmpl = s((m.get("template") or {}).get("id") if isinstance(m.get("template"), dict) else "", 64)
+    return bool(m.get("gpus") or m.get("gpu") or raw.get("gpus") or raw.get("gpu") or tmpl.startswith("gpu"))
+
+
 def spec_of(x):
     x = x or {}
     return {"vcpus": int(x.get("vcpus") or 0), "memMiB": int(x.get("memMiB") or 0), "diskGiB": int(x.get("persistentDiskGiB") or 0)}
@@ -116,7 +125,7 @@ def status():
             "diskGiB": spec["diskGiB"],
             "template": s((m.get("template") or {}).get("id"), 64),
             "snapshotId": s((m.get("snapshot") or {}).get("id"), 64),
-            "gpu": bool(m.get("gpus") or m.get("gpu")),
+            "gpu": is_gpu(m),
             "autoSuspendSec": int(m.get("autoSuspendAfterSeconds") or 0),
             "createdAt": s(m.get("createdAt"), 40),
             "updatedAt": s(m.get("updatedAt"), 40),
@@ -281,6 +290,9 @@ ONE_ARG = {
 
 TWO_NAMES = {
     "snapshot-save": (lambda b, n: ["snapshot", "save", b, "--name", n], 3600, "Snapshot {n} saved from {b}"),
+    # A running GPU box can't be saved live: stop, save, start again (instabox 0.8.277+).
+    "snapshot-save-restart": (lambda b, n: ["snapshot", "save", b, "--name", n, "--restart"], 3600,
+                              "Snapshot {n} saved from {b}; {b} started again"),
     "fork": (lambda b, n: ["fork", b, "--name", n], 900, "{n} forked from {b}"),
     "rename": (lambda b, n: ["rename", b, n], 60, "{b} renamed to {n}"),
     "restore-to": (lambda b, n: ["restore", b, "--snapshot", n, "--yes"], 900, "{b} restored to snapshot {n}"),

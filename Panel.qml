@@ -168,7 +168,7 @@ Panel {
     refresh()
   }
 
-  readonly property var confirmVerbs: ["rm", "snapshot-rm", "restore", "restore-to", "stop", "restart", "resize-size", "resize-disk", "new-gpu"]
+  readonly property var confirmVerbs: ["rm", "snapshot-rm", "restore", "restore-to", "stop", "restart", "resize-size", "resize-disk", "new-gpu", "snapshot-save-restart"]
 
   // Destructive, disruptive or billable verbs go through the confirm dialog first.
   function request(verb, target, args, extra) {
@@ -227,6 +227,12 @@ Panel {
     if (p.kind === "rename" && name === p.target) { cancelPrompt(); return }
     root.prompt = null
     keyCatcher.forceActiveFocus()
+    // A running GPU box can't be saved live; the CLI stops and restarts it, so confirm first.
+    var m = root.machines.filter(function(x) { return x.name === p.target })[0]
+    if (p.kind === "snapshot-save" && m && m.gpu && Model.isRunning(m)) {
+      request("snapshot-save-restart", p.target, [p.target, name], name)
+      return
+    }
     runAction(p.kind, [p.target, name])
   }
 

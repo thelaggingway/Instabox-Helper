@@ -102,12 +102,13 @@ ok
 "$HELPER" action snapshot-rm old
 "$HELPER" action restore dev
 "$HELPER" action snapshot-save dev dev-20261112
+"$HELPER" action snapshot-save-restart gpu1 gpu1-base
 "$HELPER" action fork dev dev-fork
 "$HELPER" action create old fresh-box
-expected=$'resume dev\nrm dev --yes\nsnapshot rm old --yes\nrestore dev --yes\nsnapshot save dev --name dev-20261112\nfork dev --name dev-fork\ncreate --name fresh-box --snapshot old'
+expected=$'resume dev\nrm dev --yes\nsnapshot rm old --yes\nrestore dev --yes\nsnapshot save dev --name dev-20261112\nsnapshot save gpu1 --name gpu1-base --restart\nfork dev --name dev-fork\ncreate --name fresh-box --snapshot old'
 [[ $(cat "$LOG") == "$expected" ]] || { diff <(echo "$expected") "$LOG"; fail "action argv"; }
 ok
-[[ $(wc -l < "$NOTES") -eq 7 ]] || fail "one notification per action"
+[[ $(wc -l < "$NOTES") -eq 8 ]] || fail "one notification per action"
 grep -q "fresh-box created from old" "$NOTES" || fail "success notification text"
 ok
 

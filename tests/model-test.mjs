@@ -76,7 +76,7 @@ t("headline, tooltip, usage, confirm", () => {
   assert.equal(M.tooltip(s, 1), "Instabox: 1 of 2 boxes running")
   assert.equal(M.usageLine({ machines: 4, maxMachines: 500, snapshots: 21, maxSnapshots: 0, storedBytes: 1e9 }), "4/500 boxes · 21 snapshots · 1.0 GB")
   for (const v of ["rm", "snapshot-rm", "restore", "stop", "restart"]) assert.match(M.confirmText(v, "dev"), /dev/)
-  for (const v of ["resume", "start", "suspend", "stop", "restart", "restore", "rm", "snapshot-save", "fork", "create", "snapshot-rm"]) assert.ok(M.progressText[v], v)
+  for (const v of ["resume", "start", "suspend", "stop", "restart", "restore", "rm", "snapshot-save", "snapshot-save-restart", "fork", "create", "snapshot-rm"]) assert.ok(M.progressText[v], v)
 })
 
 t("icons are single code points", () => {
@@ -144,6 +144,7 @@ t("v0.2 confirm texts", () => {
   assert.match(M.confirmText("restore-to", "dev", "base"), /dev.*base/)
   assert.match(M.confirmText("resize-size", "dev", "8 vCPU / 16 GB"), /restarts/)
   assert.match(M.confirmText("resize-disk", "dev", "40"), /40 GB/)
+  assert.match(M.confirmText("snapshot-save-restart", "gpu1", "base"), /base.*gpu1.*stops, saves and starts again/)
   assert.match(M.confirmText("new-gpu", "g", "NVIDIA L4."), /billed/)
   for (const v of ["new", "rename", "restore-to", "idle", "resize-size", "resize-disk"]) assert.ok(M.progressText[v], v)
 })
