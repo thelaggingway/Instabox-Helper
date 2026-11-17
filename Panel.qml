@@ -745,6 +745,82 @@ Panel {
 
   // ---------- components ----------
 
+  // A one-line entry that takes typed keys only. It deliberately has no Qt text input
+  // (TextField/TextInput): a writable one fetches the clipboard on every clipboard change,
+  // unbounded, so a hostile clipboard owner could stall the shell. No paste here, by design.
+  // selectAll() marks the suggested text: the first key typed replaces it, Backspace clears it.
+  component KeyField: Rectangle {
+    id: kf
+    property string text: ""
+    property string placeholderText: ""
+    property int maximumLength: 63
+    property var allowed: /[A-Za-z0-9._-]/
+    property bool selected: false
+    property real pixelSize: Style.font.bodySmall
+    signal edited(string value)
+    signal accepted()
+    signal escaped()
+
+    function selectAll() { kf.selected = kf.text !== "" }
+
+    implicitHeight: kfText.implicitHeight + Style.space(10)
+    radius: Style.space(4)
+    color: "transparent"
+    border.width: 1
+    border.color: activeFocus ? root.accent : (kfMouse.containsMouse ? root.foreground : root.muted)
+    onActiveFocusChanged: if (!activeFocus) kf.selected = false
+
+    Rectangle {
+      visible: kf.selected && kf.activeFocus
+      anchors.left: kfText.left
+      anchors.verticalCenter: kfText.verticalCenter
+      width: Math.min(kfText.contentWidth, kfText.width)
+      height: kfText.contentHeight
+      color: root.accent
+      opacity: 0.35
+    }
+
+    PlainText {
+      id: kfText
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.leftMargin: Style.space(8)
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      text: kf.text !== "" ? kf.text + (kf.activeFocus && !kf.selected ? "▏" : "") : (kf.activeFocus ? "▏" : kf.placeholderText)
+      color: kf.text !== "" ? root.foreground : root.muted
+      font.pixelSize: kf.pixelSize
+      elide: Text.ElideLeft
+    }
+
+    MouseArea {
+      id: kfMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.IBeamCursor
+      onClicked: { kf.selected = false; kf.forceActiveFocus() }
+    }
+
+    Keys.onPressed: function(event) {
+      if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { kf.accepted(); event.accepted = true; return }
+      if (event.key === Qt.Key_Escape) { kf.escaped(); event.accepted = true; return }
+      if (event.key === Qt.Key_Backspace) {
+        kf.edited(kf.selected ? "" : kf.text.slice(0, -1)); kf.selected = false; event.accepted = true; return
+      }
+      if (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_End || event.key === Qt.Key_Home) {
+        kf.selected = false; event.accepted = true; return
+      }
+      if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+      var t = event.text
+      if (t.length === 1 && kf.allowed.test(t)) {
+        var base = kf.selected ? "" : kf.text
+        kf.selected = false
+        if (base.length < kf.maximumLength) kf.edited(base + t)
+        event.accepted = true
+      }
+    }
+  }
+
   component PlainText: Text {
     textFormat: Text.PlainText
     color: root.foreground
@@ -811,17 +887,14 @@ Panel {
 
     onShownChanged: if (shown) Qt.callLater(function() { field.forceActiveFocus(); field.selectAll() })
 
-    TextField {
+    KeyField {
       id: field
       width: promptRow.width - okButton.width - cancelButton.width - promptRow.spacing * 2
       text: promptRow.shown ? root.promptText : ""
       placeholderText: kind === "snapshot-save" ? "Snapshot name" : (kind === "rename" ? "New name" : "New box name")
-      foreground: root.foreground
-      font.pixelSize: Style.font.bodySmall
-      verticalPadding: Style.spacing.controlPaddingY
-      onTextChanged: if (promptRow.shown) root.promptText = text
+      onEdited: function(v) { if (promptRow.shown) root.promptText = v }
       onAccepted: root.submitPrompt()
-      Keys.onEscapePressed: root.cancelPrompt()
+      onEscaped: root.cancelPrompt()
     }
 
     PanelActionButton {
@@ -996,17 +1069,14 @@ Panel {
       Row {
         width: parent.width
         FieldLabel { text: "Name"; anchors.verticalCenter: parent.verticalCenter }
-        TextField {
+        KeyField {
           id: nameField
           width: parent.width - root.labelWidth
           text: root.formName
           placeholderText: "box name"
-          foreground: root.foreground
-          font.pixelSize: Style.font.bodySmall
-          verticalPadding: Style.spacing.controlPaddingY
-          onTextChanged: if (text !== root.formName) root.formName = text
+          onEdited: function(v) { root.formName = v }
           onAccepted: root.submitForm()
-          Keys.onEscapePressed: root.cancelForm()
+          onEscaped: root.cancelForm()
         }
       }
 

@@ -46,6 +46,7 @@ To see the panel without clicking, open it over IPC and screenshot right away (`
 9. **The helper notifies; the panel refreshes.** `action` sends the success or failure notification (`omarchy-notification-send`, falling back to `notify-send`) and exits with the CLI's code. The panel only clears its pending state and refreshes on exit.
 10. **Motion:** only the pulsing state dot and the shell's own panel animations. Follow Omarchy's motion rules (`Style.duration`, ease-out, under 300 ms) if you add any.
 11. **No secrets, no state files.** Don't add caching of account data to disk, and don't read or write `~/.config/instabox/`.
+12. **No native text inputs** (`TextField`, `TextInput`, `TextEdit`, `TextArea`): a writable one fetches the clipboard on every clipboard change with no size limit (marketplace review of the sibling Orble Helper, omacom/omarchy-plugin-marketplace#14930). Name entry is `KeyField`: typed keys only, filtered by its `allowed` regex, no paste; `selectAll()` marks the suggested name so the first key replaces it. `source-test.sh` enforces this.
 
 ## How to add an action (example: `max-run <box> <minutes>`)
 
